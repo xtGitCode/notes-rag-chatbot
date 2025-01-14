@@ -2,42 +2,56 @@ from fastapi import APIRouter, HTTPException
 from backend.app.models import NoteCreate, Note
 from backend.app.database import add_note_to_chroma, client, collection, delete_note_from_chroma
 from typing import List
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-notes_db = {}
-note_id_counter = 1
 
 @router.post("/notes", response_model=Note, status_code=201)
 def create_note(note: NoteCreate):
-    global note_id_counter
-    note_id = note_id_counter
-    note_id_counter += 1
-
-    notes_db[note_id] = note.dict()
-    add_note_to_chroma(note_id, note.content)
-    return Note(id=note_id, **note.dict())
-
+    try:
+        created_note = add_note_to_chroma(note.title, note.content)
+        if created_note:
+            return {"id": "generated_uuid", "title": note.title, "content": note.content}  
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create note")
+    except Exception as e:
+        logger.error(f"Error creating note: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
 @router.get("/notes", response_model=List[Note])
 def get_all_notes():
-    return [Note(id=id, **note) for id, note in notes_db.items()]
-
-@router.get("/notes/{note_id}", response_model=Note)
-def get_note(note_id: int):
-    note = notes_db.get(note_id)
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
-    return Note(id=note_id, **note)
+    try:
+        # Fetch all documents from the collection
+        all_notes = collection.get()
+        
+        # Extract documents, ids, and metadata
+        documents = all_notes.get("documents", [])
+        ids = all_notes.get("ids", [])
+        metadatas = all_notes.get("metadatas", [])
+        
+        # Combine the data into Note objects
+        return [
+            Note(id=id_, title=metadata.get("title", ""), content=document)
+            for id_, metadata, document in zip(ids, metadatas, documents)
+        ]
+    except Exception as e:
+        logger.error(f"Error retrieving notes: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch notes")
 
 @router.delete("/notes/{note_id}", status_code=204)
-def delete_note(note_id: int):
-    if note_id not in notes_db:
-        raise HTTPException(status_code=404, detail="Note not found")
-    del notes_db[note_id]
+def delete_note(note_id: str):
     try:
-        delete_note_from_chroma(note_id) #delete from chroma too
+        if not delete_note_from_chroma(note_id):
+            raise HTTPException(status_code=404, detail="Note not found")
     except Exception as e:
-        print(f"error deleting from chroma: {e}")
-    return
+        print(f"Error deleting from Chroma: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete note")
 
 @router.get("/chroma/count")
 def get_chroma_count():

@@ -1,61 +1,93 @@
 import chromadb
-from sentence_transformers import SentenceTransformer
 from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
+import os
+import logging
+import uuid
 
-client = chromadb.Client(Settings(
-    persist_directory="./chroma_data",  
-    chroma_db_impl="duckdb+parquet"
-))
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Ensure the collection exists or create it
-collection_name = "notes"
-collection = client.get_or_create_collection(name=collection_name)
+# --- ChromaDB Configuration ---
+CHROMA_DB_DIR = os.path.join(os.path.expanduser("~"), "my_chroma_db")
+os.makedirs(CHROMA_DB_DIR, exist_ok=True)  # Ensure directory exists
 
-embedding_model = SentenceTransformer('all-mpnet-base-v2') # You can choose a different model
+try:
+    client = chromadb.Client(Settings(
+        persist_directory=CHROMA_DB_DIR,
+        is_persistent=True))
+    logger.info(f"ChromaDB client initialized. Data directory: {CHROMA_DB_DIR}")
+except Exception as e:
+    logger.error(f"Error initializing ChromaDB client: {e}")
+    raise  # Re-raise the exception to stop execution
 
-def add_note_to_chroma(note_id: int, note_content: str):
-    """
-    Add a note to ChromaDB with its embedding.
-    
-    :param note_id: Unique ID for the note
-    :param note_content: Content of the note
-    """
+COLLECTION_NAME = "notes"
+try:
+    collection = client.get_or_create_collection(name=COLLECTION_NAME)
+    logger.info(f"ChromaDB collection '{COLLECTION_NAME}' accessed/created.")
+except Exception as e:
+    logger.error(f"Error getting/creating ChromaDB collection: {e}")
+    raise
+
+# --- Embedding Model ---
+try:
+    embedding_model = SentenceTransformer('all-mpnet-base-v2')
+    logger.info("SentenceTransformer model loaded.")
+except Exception as e:
+    logger.error(f"Error loading SentenceTransformer model: {e}")
+    raise
+
+
+def add_note_to_chroma(note_title: str, note_content: str, metadata: dict = None):
+    """Adds a note to ChromaDB."""
     try:
+        note_id = str(uuid.uuid4())
         embeddings = embedding_model.encode([note_content]).tolist()
+
         collection.add(
-            documents=[note_content],
-            ids=[str(note_id)],  # Chroma requires string IDs
+            documents=[note_content],  # The actual text content for search
+            ids=[note_id],
             embeddings=embeddings,
-            metadatas=[{"note_id": note_id}]
+            metadatas=[{"title": note_title, **(metadata or {})}] # Add metadata as a dictionary
         )
-        print(f"Note with ID {note_id} added successfully.")
+
+        logger.info(f"Note with ID {note_id} added successfully.")
+        return {"id": note_id, "title": note_title, "content": note_content} # Return a dictionary
     except Exception as e:
-        print(f"Error adding note to ChromaDB: {e}")
+        logger.error(f"Error adding note to ChromaDB: {e}")
+        return None  # Return None on failure
 
 def query_chroma(query: str, n_results: int = 3):
-    """
-    Query ChromaDB to retrieve the most relevant documents.
-    
-    :param query: Query string
-    :param n_results: Number of results to retrieve (default: 3)
-    :return: Query results
+    """Queries ChromaDB.
+
+    Args:
+        query: Query string.
+        n_results: Number of results to retrieve.
+
+    Returns:
+        Query results or None on error.
     """
     try:
         query_embedding = embedding_model.encode([query]).tolist()
         results = collection.query(query_embeddings=query_embedding, n_results=n_results)
         return results
     except Exception as e:
-        print(f"Error querying ChromaDB: {e}")
+        logger.error(f"Error querying ChromaDB: {e}")
         return None
 
 def delete_note_from_chroma(note_id: int):
-    """
-    Delete a note from ChromaDB using its ID.
-    
-    :param note_id: Unique ID for the note to delete
+    """Deletes a note from ChromaDB.
+
+    Args:
+        note_id: ID of the note to delete.
+    Returns:
+        True on success, False on failure
     """
     try:
         collection.delete(ids=[str(note_id)])
-        print(f"Note with ID {note_id} deleted successfully.")
+        logger.info(f"Note with ID {note_id} deleted successfully.")
+        return True
     except Exception as e:
-        print(f"Error deleting note from ChromaDB: {e}")
+        logger.error(f"Error deleting note from ChromaDB: {e}")
+        return False
