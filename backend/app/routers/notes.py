@@ -1,37 +1,44 @@
 from fastapi import APIRouter, HTTPException
-from app.models import NoteCreate, NoteUpdate
+from app.models import NoteCreate, Note
+from app.database import add_note_to_chroma, client, collection
+from typing import List
 
 router = APIRouter()
-
 notes_db = {}
+note_id_counter = 1
 
-@router.post("/notes")
+@router.post("/notes", response_model=Note, status_code=201)
 def create_note(note: NoteCreate):
-    note_id = len(notes_db) + 1
+    global note_id_counter
+    note_id = note_id_counter
+    note_id_counter += 1
+
     notes_db[note_id] = note.dict()
-    return {"id": note_id, "message": "Note created successfully"}
+    add_note_to_chroma(note_id, note.content)
+    return Note(id=note_id, **note.dict())
 
-@router.get("/notes")
+@router.get("/notes", response_model=List[Note])
 def get_all_notes():
-    return {"notes": notes_db}
+    return [Note(id=id, **note) for id, note in notes_db.items()]
 
-@router.get("/notes/{note_id}")
+@router.get("/notes/{note_id}", response_model=Note)
 def get_note(note_id: int):
     note = notes_db.get(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
-    return note
+    return Note(id=note_id, **note)
 
-@router.put("/notes/{note_id}")
-def update_note(note_id: int, updated_note: NoteUpdate):
-    if note_id not in notes_db:
-        raise HTTPException(status_code=404, detail="Note not found")
-    notes_db[note_id].update(updated_note.dict(exclude_unset=True))
-    return {"message": "Note updated successfully"}
-
-@router.delete("/notes/{note_id}")
+@router.delete("/notes/{note_id}", status_code=204)
 def delete_note(note_id: int):
     if note_id not in notes_db:
         raise HTTPException(status_code=404, detail="Note not found")
     del notes_db[note_id]
-    return {"message": "Note deleted successfully"}
+    try:
+        collection.delete(ids=[str(note_id)]) #delete from chroma too
+    except Exception as e:
+        print(f"error deleting from chroma: {e}")
+    return
+
+@router.get("/chroma/count")
+def get_chroma_count():
+    return {"count": collection.count()}
