@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from app.models import NoteCreate, Note
-from app.database import add_note_to_chroma, client, collection
+from backend.app.models import NoteCreate, Note
+from backend.app.database import add_note_to_chroma, client, collection, delete_note_from_chroma
 from typing import List
 
 router = APIRouter()
@@ -34,7 +34,7 @@ def delete_note(note_id: int):
         raise HTTPException(status_code=404, detail="Note not found")
     del notes_db[note_id]
     try:
-        collection.delete(ids=[str(note_id)]) #delete from chroma too
+        delete_note_from_chroma(note_id) #delete from chroma too
     except Exception as e:
         print(f"error deleting from chroma: {e}")
     return

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import notes, chat
+from backend.app.routers import notes, chat
 
 app = FastAPI(title="Notes RAG Chatbot API")
 

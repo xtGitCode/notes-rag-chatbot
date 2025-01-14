@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from app.models import ChatMessage
-from app.database import query_chroma
+from backend.app.models import ChatMessage
+from backend.app.database import query_chroma
 
 router = APIRouter()
 
