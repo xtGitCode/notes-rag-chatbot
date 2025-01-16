@@ -9,5 +9,8 @@ class Note(BaseModel):
     title: str
     content: str
 
-class ChatMessage(BaseModel):
-    query: str
+class ChatRequest(BaseModel):
+    question: str
+
+class ChatResponse(BaseModel):
+    answer: str

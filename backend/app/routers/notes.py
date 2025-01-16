@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from backend.app.models import NoteCreate, Note
-from backend.app.database import add_note_to_chroma, client, collection, delete_note_from_chroma
+from backend.app.database import add_note_to_chroma, collection, delete_note_from_chroma
 from typing import List
 from fastapi import APIRouter, HTTPException
 import logging
