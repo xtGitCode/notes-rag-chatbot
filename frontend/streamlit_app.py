@@ -33,33 +33,43 @@ def delete_note(note_id):
         st.error(f"Error deleting note: {e}")
         return False
 
-# ... (similar functions for update_note and chat)
-
 st.title("My Notes App")
 
 notes = get_notes()
+num_notes = len(notes)
 
 if notes:
+    st.write(f"Total Notes: {num_notes}")
     for note in notes:
         with st.expander(note["title"]):
             st.write(note["content"])
             if st.button(f"Delete {note['title']}", key=f"delete_{note['id']}"):
                 if delete_note(note["id"]):
                     st.success(f"Note '{note['title']}' deleted.")
-                    st.experimental_rerun() # Refresh the app
+                    st.rerun() 
 
 else:
     st.info("No notes found. Create one below.")
 
+# Initialize session state for title and content
+if "new_title" not in st.session_state:
+    st.session_state.new_title = ""
+if "new_content" not in st.session_state:
+    st.session_state.new_content = ""
+
 st.subheader("Create New Note")
-new_title = st.text_input("Title")
-new_content = st.text_area("Content")
+# Use session state variables for input fields
+new_title = st.text_input("Title", value=st.session_state.new_title, key="title_input")
+new_content = st.text_area("Content", value=st.session_state.new_content, key="content_input")
+
 if st.button("Save Note"):
     if new_title and new_content:
         new_note = create_note(new_title, new_content)
         if new_note:
             st.success(f"Note '{new_title}' created!")
-            st.experimental_rerun()
+            st.session_state.new_title = ""
+            st.session_state.new_content = ""
+            st.rerun()
         else:
             st.error("Failed to create note.")
     else:
