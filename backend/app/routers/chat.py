@@ -1,28 +1,42 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from ..llm.llm_handler import NotesRAGBot
 from backend.app.models import ChatRequest, ChatResponse
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 bot = NotesRAGBot()
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(chat_request: ChatRequest):
+    """
+    Chat endpoint that processes user questions and returns answers from the RAG system.
+    """
     try:
-        raw_answer = bot.query(chat_request.question)  # Query the bot
+        logger.info(f"Received chat request: {chat_request.question}")
 
-        if isinstance(raw_answer, dict):  # Handle dictionary responses
-            answer = raw_answer.get("answer", "No valid answer provided.")
-            title = raw_answer.get("title", "No Title Found")  # Set default title
-            content = raw_answer.get("content", "No Content Found")  # Set default content
-        elif isinstance(raw_answer, str):  # Ensure it's a string
-            answer = raw_answer
-            title = "No Title Found"  # Set default title (optional)
-            content = "No Content Found"  # Set default content (optional)
+        # Query the bot with just the question
+        response = bot.query(question=chat_request.question)
+
+        # Process the response
+        if isinstance(response, dict):
+            answer = response.get("answer", "No valid answer provided.")
+            title = response.get("title")
+            content = response.get("content")
+
+            logger.info(f"Generated response: {answer}")
+
+            return ChatResponse(
+                answer=answer,
+                title=title,
+                content=content
+            )
         else:
+            logger.error("Unexpected response type from bot.")
             raise ValueError("Unexpected response type from bot.")
-
-        return ChatResponse(answer=answer, title=title, content=content)
-
     except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")

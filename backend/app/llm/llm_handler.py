@@ -1,14 +1,15 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from transformers import AutoTokenizer
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
 from langchain_community.llms import HuggingFaceHub
-from backend.app.database import CHROMA_DB_DIR, client, COLLECTION_NAME
+from backend.app.database import index, query_pinecone
 from .prompt_templates import get_rag_prompt
 from dotenv import load_dotenv
+from langchain.docstore.document import Document
+from langchain.vectorstores import Pinecone as PineconeStore
 
 load_dotenv()
 
@@ -17,16 +18,12 @@ class RAGBotError(Exception):
     pass
 
 class NotesRAGBot:
-    def __init__(self, chroma_db_path: str = CHROMA_DB_DIR):
+    def __init__(self):
         """
         Initialize the RAG bot with necessary components.
-        
-        Args:
-            chroma_db_path (str): Path to ChromaDB directory
         """
         self._setup_environment()
         self._initialize_components()
-        self.chroma_db_path = chroma_db_path
 
     def _setup_environment(self) -> None:
         """Set up environment variables and configurations."""
@@ -34,8 +31,7 @@ class NotesRAGBot:
         if not self.hf_token:
             raise RAGBotError("HF_TOKEN environment variable not set")
         
-        # Changed to a free model
-        self.model_name = "google/flan-t5-base"  # Alternative options: "facebook/opt-350m", "EleutherAI/gpt-neo-125m"
+        self.model_name = "google/flan-t5-base" 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.max_tokens = 512  # Adjusted for the smaller model
 
@@ -59,6 +55,8 @@ class NotesRAGBot:
                 }
             )
 
+            self.vectordb = PineconeStore(index, self.embeddings, "content")
+
             # Rest of the initialization code remains the same
             self.memory = ConversationBufferMemory(
                 memory_key="chat_history",
@@ -66,34 +64,19 @@ class NotesRAGBot:
                 output_key="answer"
             )
 
-            # Initialize ChromaDB
-            self._setup_database()
-
             # Initialize chain
             self.chain = None
 
         except Exception as e:
             raise RAGBotError(f"Error initializing components: {e}")
 
-    def _setup_database(self) -> None:
-        """Set up and connect to ChromaDB."""
-        try:
-            self.db = Chroma(
-                client=client,
-                collection_name=COLLECTION_NAME,
-                embedding_function=self.embeddings
-            )
-            print(f"Successfully loaded collection '{COLLECTION_NAME}' from ChromaDB.")
-        except Exception as e:
-            raise RAGBotError(f"Error accessing ChromaDB collection: {e}")
-
     def _count_tokens(self, messages: List[str]) -> int:
         """
         Count tokens in a list of messages using the model's tokenizer.
-        
+
         Args:
             messages (List[str]): List of message strings
-            
+
         Returns:
             int: Total token count
         """
@@ -112,117 +95,68 @@ class NotesRAGBot:
 
         self.memory.chat_memory.messages = chat_history
 
-    def _get_relevant_context(self, question: str, k: int = 3) -> tuple[str, list]:
-        """
-        Retrieve relevant context from the vector store.
-        
-        Args:
-            question (str): User's question
-            k (int): Number of documents to retrieve
-            
-        Returns:
-            tuple[str, list]: Combined context string and list of raw results
-        """
+    def _get_relevant_context(self, question: str, k: int = 3) -> List[Document]:
+        """Retrieve relevant context from Pinecone and return as a list of Documents."""
         try:
-            combined_docs = []
-            for doc in self.db.get()['documents']: # Access documents directly
-                title = self.db.get()['metadatas'][self.db.get()['documents'].index(doc)].get('title', '')
-                combined_text = f"{title}\n{doc}"  # Combine title and content
-                combined_docs.append(combined_text)
+            results = query_pinecone(question, k)
 
-            # Get documents with their scores
-            results = self.db.similarity_search_with_score(
-                question,
-                k=k
-            )
-            
-            # Filter results based on score
+             # Filter results based on score threshold (adjust threshold as needed)
+            score_threshold = 0.5  # Assuming lower scores are better
             filtered_docs = [
-                doc[0].page_content 
-                for doc in results 
-                if doc[1] < 1.5  # Lower score means more similar
+                result  
+                for result in results
+                if isinstance(result, dict) and result.get('score', float('inf')) <= score_threshold
             ]
-            
-            # If no results pass the threshold, take the best match
-            if not filtered_docs and results:
-                return None, []
-                
-            return "\n".join(filtered_docs), results
-                
+
+            if not filtered_docs:
+                return None
+
+            documents = [
+                Document(page_content=doc.get('content', ''), metadata=doc)
+                for doc in filtered_docs
+            ]
+            return documents
+
         except Exception as e:
             raise RAGBotError(f"Error retrieving context: {e}")
-    
+
     def query(self, question: str) -> dict:
         """
         Process user query and generate response.
-        
+
         Args:
             question (str): User's question
-                
+
         Returns:
             dict: Response including answer and debug info
         """
-        if not self.db:
-            raise RAGBotError("ChromaDB collection is not available!")
-
         try:
             # Initialize chain if not already done
             if not self.chain:
-                # Get the prompt template
-                rag_prompt = get_rag_prompt()
-                
                 self.chain = ConversationalRetrievalChain.from_llm(
                     llm=self.llm,
-                    retriever=self.db.as_retriever(search_kwargs={"k": 3}),
+                    retriever=self.vectordb.as_retriever(search_kwargs={'k': 3}),
                     memory=self.memory,
                     return_source_documents=True,
-                    combine_docs_chain_kwargs={"prompt": rag_prompt}  # Use the prompt template properly
+                    verbose=True  # for debugging
                 )
 
             # Manage conversation memory
             self._manage_memory()
 
             # Get relevant context and debug info
-            context, raw_results = self._get_relevant_context(question)
-
+            context = self._get_relevant_context(question)
             if context:
-                # Generate response
-                response = self.chain.invoke({"question": question})
-                answer = response["answer"]
-
-                # Add debug information
-                debug_info = {
-                    "retrieved_context": context,
-                    "raw_results": [
-                        {
-                            "content": doc[0].page_content,
-                            "score": doc[1],
-                            "metadata": doc[0].metadata
-                        }
-                        for doc in raw_results
-                    ]
-                }
-
+                # Just pass the question and let the chain handle the context
+                response = self.chain({"question": question})
+                
                 return {
-                    "answer": str(answer),
-                    "title": raw_results[:1][0][0].metadata['title'],
-                    "content": raw_results[:1][0][0].page_content
+                    "answer": str(response["answer"]),
+                    "title": context[0].metadata.get('title', 'No title available'),
+                    "content": context[0].metadata.get('content', 'No content available')
                 }
-            
             else:
                 return {"answer": "I couldn't find anything relevant in your notes."}
 
         except Exception as e:
             raise RAGBotError(f"Error processing query: {e}")
-
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit with proper cleanup."""
-        try:
-            if self.db:
-                self.db.persist()
-        except Exception as e:
-            print(f"Error during cleanup: {e}")

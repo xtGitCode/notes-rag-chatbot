@@ -1,34 +1,34 @@
-import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
 import os
 import logging
 import uuid
+from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+from pinecone import Pinecone, ServerlessSpec
+from langchain_pinecone import PineconeVectorStore
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- ChromaDB Configuration ---
-CHROMA_DB_DIR = os.path.join(os.path.expanduser("~"), "my_chroma_db")
-os.makedirs(CHROMA_DB_DIR, exist_ok=True)  # Ensure directory exists
+# --- Pinecone Configuration ---
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+INDEX_NAME = "notes-index"
 
-try:
-    client = chromadb.Client(Settings(
-        persist_directory=CHROMA_DB_DIR,
-        is_persistent=True))
-    logger.info(f"ChromaDB client initialized. Data directory: {CHROMA_DB_DIR}")
-except Exception as e:
-    logger.error(f"Error initializing ChromaDB client: {e}")
-    raise  # Re-raise the exception to stop execution
+# Initialize Pinecone instance
+pc = Pinecone(api_key=PINECONE_API_KEY)
+namespace = "notes-database"
 
-COLLECTION_NAME = "notes"
-try:
-    collection = client.get_or_create_collection(name=COLLECTION_NAME)
-    logger.info(f"ChromaDB collection '{COLLECTION_NAME}' accessed/created.")
-except Exception as e:
-    logger.error(f"Error getting/creating ChromaDB collection: {e}")
-    raise
+# Check if the index exists; if not, create it
+if INDEX_NAME not in pc.list_indexes().names():
+    pc.create_index(name=INDEX_NAME, dimension=768, metric="cosine", spec=ServerlessSpec(cloud="aws", region="us-east-1"))
+
+index = pc.Index(INDEX_NAME)
+print(index)
+
+logger.info(f"Pinecone index '{INDEX_NAME}' initialized.")
 
 # --- Embedding Model ---
 try:
@@ -38,56 +38,66 @@ except Exception as e:
     logger.error(f"Error loading SentenceTransformer model: {e}")
     raise
 
-
-def add_note_to_chroma(note_title: str, note_content: str, metadata: dict = None):
-    """Adds a note to ChromaDB."""
+def add_note_to_pinecone(note_title: str, note_content: str, metadata: dict = None):
+    """Adds a note to Pinecone."""
     try:
         note_id = str(uuid.uuid4())
-        embeddings = embedding_model.encode([note_content]).tolist()
-
-        collection.add(
-            documents=[note_content],  # The actual text content for search
-            ids=[note_id],
-            embeddings=embeddings,
-            metadatas=[{"title": note_title, **(metadata or {})}] # Add metadata as a dictionary
+        embedding = embedding_model.encode(note_content).tolist()
+        
+        # Include content in the metadata
+        metadata_with_content = {
+            "title": note_title,
+            "content": note_content,
+            **(metadata or {})
+        }
+        
+        index.upsert(
+            vectors=[(note_id, embedding, metadata_with_content)],
+            namespace=namespace
         )
-
+      
         logger.info(f"Note with ID {note_id} added successfully.")
-        return {"id": note_id, "title": note_title, "content": note_content} # Return a dictionary
+        return {"id": note_id, "title": note_title, "content": note_content}
     except Exception as e:
-        logger.error(f"Error adding note to ChromaDB: {e}")
-        return None  # Return None on failure
-
-def query_chroma(query: str, n_results: int = 3):
-    """Queries ChromaDB.
-
-    Args:
-        query: Query string.
-        n_results: Number of results to retrieve.
-
-    Returns:
-        Query results or None on error.
-    """
-    try:
-        query_embedding = embedding_model.encode([query]).tolist()
-        results = collection.query(query_embeddings=query_embedding, n_results=n_results)
-        return results
-    except Exception as e:
-        logger.error(f"Error querying ChromaDB: {e}")
+        logger.error(f"Error adding note to Pinecone: {e}")
         return None
 
-def delete_note_from_chroma(note_id: int):
-    """Deletes a note from ChromaDB.
-
-    Args:
-        note_id: ID of the note to delete.
-    Returns:
-        True on success, False on failure
-    """
+def delete_note_from_pinecone(note_id: str):
+    """Deletes a note from Pinecone."""
     try:
-        collection.delete(ids=[str(note_id)])
+        index.delete(ids=[note_id], namespace=namespace)
         logger.info(f"Note with ID {note_id} deleted successfully.")
         return True
     except Exception as e:
-        logger.error(f"Error deleting note from ChromaDB: {e}")
+        logger.error(f"Error deleting note from Pinecone: {e}")
         return False
+
+def query_pinecone(query_text: str, top_k=3):
+    try:
+        if not query_text.strip():
+            logger.error("Query text is empty or invalid.")
+            return []
+
+        query_embedding = embedding_model.encode(query_text).tolist()
+        for ids in index.list(namespace=namespace):
+            results = index.query(
+                id=ids[0], 
+                namespace=namespace, 
+                query=query_embedding,
+                top_k=top_k,
+                include_values=True,
+                include_metadata=True
+            )
+        if results.get("matches"):
+            result_context = [
+                {"title": match["metadata"]["title"], "content": match["metadata"]["content"], "score": match["score"]}
+                for match in results["matches"]
+            ]
+        else:
+            logger.warning("No matches found.")
+
+        return result_context
+
+    except Exception as e:
+        logger.error(f"Error querying Pinecone: {e}")
+        return None

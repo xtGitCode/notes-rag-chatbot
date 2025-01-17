@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import time
 
 BACKEND_URL = "http://127.0.0.1:8000"
 
@@ -77,6 +78,8 @@ if notes:
             if st.button(f"Delete {note['title']}", key=f"delete_{note['id']}"):
                 if delete_note(note["id"]):
                     st.success(f"Note '{note['title']}' deleted.")
+                    with st.spinner('Deleting note, please wait...'):
+                        time.sleep(5) 
                     st.rerun() 
 
 else:
@@ -101,6 +104,8 @@ if st.button("Save Note"):
             st.success(f"Note '{new_title}' created!")
             st.session_state.new_title = ""
             st.session_state.new_content = ""
+            with st.spinner('Creating note, please wait...'):
+                        time.sleep(5) 
             st.rerun()
         else:
             st.error("Failed to create note.")
@@ -113,7 +118,7 @@ new_query= st.text_area("Ask question about your notes", value=st.session_state.
 if st.button("Ask Chatbot"):
   if new_query:
     if query_note(new_query):
-      st.session_state.new_query = ""  # Clear query input after successful response
+      st.session_state.new_query = ""  
     else:
       st.error("Failed to query notes")
   else:
