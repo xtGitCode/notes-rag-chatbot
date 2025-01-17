@@ -78,26 +78,34 @@ def query_pinecone(query_text: str, top_k=3):
             logger.error("Query text is empty or invalid.")
             return []
 
+        # Generate the embedding for the query
         query_embedding = embedding_model.encode(query_text).tolist()
-        for ids in index.list(namespace=namespace):
-            results = index.query(
-                id=ids[0], 
-                namespace=namespace, 
-                query=query_embedding,
-                top_k=top_k,
-                include_values=True,
-                include_metadata=True
-            )
+
+        # Query the Pinecone index
+        results = index.query(
+            namespace=namespace,
+            vector=query_embedding,
+            top_k=top_k,
+            include_values=True,
+            include_metadata=True
+        )
+
         if results.get("matches"):
+            # Extract relevant context
             result_context = [
-                {"title": match["metadata"]["title"], "content": match["metadata"]["content"], "score": match["score"]}
+                {
+                    "title": match["metadata"].get("title", "No Title"),
+                    "content": match["metadata"].get("content", ""),
+                    "score": match["score"]
+                }
                 for match in results["matches"]
             ]
         else:
             logger.warning("No matches found.")
+            result_context = []
 
         return result_context
 
     except Exception as e:
         logger.error(f"Error querying Pinecone: {e}")
-        return None
+        return []

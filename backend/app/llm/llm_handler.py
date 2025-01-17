@@ -5,7 +5,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import HuggingFaceHub
-from backend.app.database import index, query_pinecone
+from backend.app.database import index, query_pinecone, namespace
 from .prompt_templates import get_rag_prompt
 from dotenv import load_dotenv
 from langchain.docstore.document import Document
@@ -55,7 +55,7 @@ class NotesRAGBot:
                 }
             )
 
-            self.vectordb = PineconeStore(index, self.embeddings, "content")
+            self.vectordb = PineconeStore(index, self.embeddings, text_key="content", namespace=namespace)
 
             # Rest of the initialization code remains the same
             self.memory = ConversationBufferMemory(
@@ -105,17 +105,17 @@ class NotesRAGBot:
             filtered_docs = [
                 result  
                 for result in results
-                if isinstance(result, dict) and result.get('score', float('inf')) <= score_threshold
+                if isinstance(result, dict) and result.get('score', float('inf')) >= score_threshold
             ]
 
             if not filtered_docs:
                 return None
-
-            documents = [
-                Document(page_content=doc.get('content', ''), metadata=doc)
-                for doc in filtered_docs
-            ]
-            return documents
+            else:
+                documents = [
+                    Document(page_content=doc.get('content', ''), metadata=doc)
+                    for doc in filtered_docs
+                ]
+                return documents
 
         except Exception as e:
             raise RAGBotError(f"Error retrieving context: {e}")
@@ -133,12 +133,17 @@ class NotesRAGBot:
         try:
             # Initialize chain if not already done
             if not self.chain:
+                # Get the prompt template
+                rag_prompt = get_rag_prompt()
+
                 self.chain = ConversationalRetrievalChain.from_llm(
                     llm=self.llm,
-                    retriever=self.vectordb.as_retriever(search_kwargs={'k': 3}),
+                    retriever=self.vectordb.as_retriever(search_kwargs={'k': 10}),
                     memory=self.memory,
                     return_source_documents=True,
-                    verbose=True  # for debugging
+                    combine_docs_chain_kwargs={"prompt": rag_prompt},
+                    chain_type="stuff",
+                    verbose=True
                 )
 
             # Manage conversation memory
@@ -147,16 +152,29 @@ class NotesRAGBot:
             # Get relevant context and debug info
             context = self._get_relevant_context(question)
             if context:
-                # Just pass the question and let the chain handle the context
+                combined_context = context[0].metadata.get('title', '') + "\n" + context[0].metadata.get('content', '')
+                
                 response = self.chain({"question": question})
                 
+                # Safely access source_documents
+                source_documents = response.get('source_documents', [])
+                if source_documents:
+                    first_document = source_documents[0]
+                    title = first_document.metadata.get('title', 'No title available')
+                    content = first_document.page_content
+                else:
+                    title = 'No title available'
+                    content = 'No content available'
+
                 return {
                     "answer": str(response["answer"]),
-                    "title": context[0].metadata.get('title', 'No title available'),
-                    "content": context[0].metadata.get('content', 'No content available')
+                    "title": title,
+                    "content": content
                 }
             else:
-                return {"answer": "I couldn't find anything relevant in your notes."}
+                return {"answer": "I couldn't find anything relevant in your notes.",
+                        "title":"None",
+                        "content":"None"}
 
         except Exception as e:
             raise RAGBotError(f"Error processing query: {e}")
