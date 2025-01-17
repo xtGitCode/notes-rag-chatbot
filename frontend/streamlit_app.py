@@ -32,14 +32,43 @@ def delete_note(note_id):
     except requests.exceptions.RequestException as e:
         st.error(f"Error deleting note: {e}")
         return False
+    
+def query_note(question):
+    with st.spinner("Querying the chatbot..."):
+        try:
+            headers = {'Content-Type': 'application/json'}
+            data = {'question': question}
+            response = requests.post(f"{BACKEND_URL}/chat/chat", headers=headers, data=json.dumps(data))
+            response.raise_for_status()
+            response_data = response.json()
+            if response_data:
+                if isinstance(response_data, dict): 
+                        for key, value in response_data.items():
+                            st.markdown(f"**{key.capitalize()}:** {value}") 
+                elif isinstance(response_data, list): 
+                    for item in response_data:
+                        if isinstance(item, dict):
+                            for key, value in item.items():
+                                st.markdown(f"**{key.capitalize()}:** {value}")
+                        else:
+                            st.write(item) 
+                else:
+                    st.write(response_data) 
+            else:
+                st.info("No notes found matching your question.")
+            return response_data
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error querying note: {e}")
+            return False
 
-st.title("My Notes App")
+st.title("Notes Chat")
 
+st.subheader("My Notes")
 notes = get_notes()
 num_notes = len(notes)
+st.write(f"Total Notes: {num_notes}")
 
 if notes:
-    st.write(f"Total Notes: {num_notes}")
     for note in notes:
         with st.expander(note["title"]):
             st.write(note["content"])
@@ -56,6 +85,8 @@ if "new_title" not in st.session_state:
     st.session_state.new_title = ""
 if "new_content" not in st.session_state:
     st.session_state.new_content = ""
+if "new_query" not in st.session_state:
+    st.session_state.new_query = ""
 
 st.subheader("Create New Note")
 # Use session state variables for input fields
@@ -75,6 +106,14 @@ if st.button("Save Note"):
     else:
         st.warning("Please enter both title and content.")
 
-# Chatbot section (to be implemented later)
+# Chatbot section 
 st.subheader("Chat with your notes")
-# ...
+new_query= st.text_area("Ask question about your notes", value=st.session_state.new_content, key="query_input")
+if st.button("Ask Chatbot"):
+  if new_query:
+    if query_note(new_query):
+      st.session_state.new_query = ""  # Clear query input after successful response
+    else:
+      st.error("Failed to query notes")
+  else:
+    st.warning("Please enter a question")
