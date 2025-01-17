@@ -32,7 +32,7 @@ def delete_note(note_id):
     except requests.exceptions.RequestException as e:
         st.error(f"Error deleting note: {e}")
         return False
-    
+
 def query_note(question):
     with st.spinner("Querying the chatbot..."):
         try:
@@ -41,22 +41,24 @@ def query_note(question):
             response = requests.post(f"{BACKEND_URL}/chat/chat", headers=headers, data=json.dumps(data))
             response.raise_for_status()
             response_data = response.json()
+
             if response_data:
-                if isinstance(response_data, dict): 
-                        for key, value in response_data.items():
-                            st.markdown(f"**{key.capitalize()}:** {value}") 
-                elif isinstance(response_data, list): 
-                    for item in response_data:
-                        if isinstance(item, dict):
-                            for key, value in item.items():
-                                st.markdown(f"**{key.capitalize()}:** {value}")
-                        else:
-                            st.write(item) 
+                st.write(f"**Answer:** {response_data['answer']}")
+
+                # Title and Content Formatting (Collapsible with Toggle)
+                if response_data.get('title') or response_data.get('content'):
+                    with st.expander("View Source (Note Title & Content)"):
+                        if response_data.get('title'):
+                            st.write(f"**Title:** {response_data['title']}")
+                        if response_data.get('content'):
+                            st.write(f"**Content:**")
+                            st.markdown(response_data['content'], unsafe_allow_html=False)  # Prevent XSS
+
                 else:
-                    st.write(response_data) 
-            else:
-                st.info("No notes found matching your question.")
+                    st.info("No notes found matching your question.")
+
             return response_data
+
         except requests.exceptions.RequestException as e:
             st.error(f"Error querying note: {e}")
             return False
@@ -89,7 +91,6 @@ if "new_query" not in st.session_state:
     st.session_state.new_query = ""
 
 st.subheader("Create New Note")
-# Use session state variables for input fields
 new_title = st.text_input("Title", value=st.session_state.new_title, key="title_input")
 new_content = st.text_area("Content", value=st.session_state.new_content, key="content_input")
 

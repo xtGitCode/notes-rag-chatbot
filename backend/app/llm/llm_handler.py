@@ -124,6 +124,12 @@ class NotesRAGBot:
             tuple[str, list]: Combined context string and list of raw results
         """
         try:
+            combined_docs = []
+            for doc in self.db.get()['documents']: # Access documents directly
+                title = self.db.get()['metadatas'][self.db.get()['documents'].index(doc)].get('title', '')
+                combined_text = f"{title}\n{doc}"  # Combine title and content
+                combined_docs.append(combined_text)
+
             # Get documents with their scores
             results = self.db.similarity_search_with_score(
                 question,
@@ -139,7 +145,7 @@ class NotesRAGBot:
             
             # If no results pass the threshold, take the best match
             if not filtered_docs and results:
-                filtered_docs = [results[0][0].page_content]
+                return None, []
                 
             return "\n".join(filtered_docs), results
                 
@@ -179,28 +185,32 @@ class NotesRAGBot:
             # Get relevant context and debug info
             context, raw_results = self._get_relevant_context(question)
 
-            # Generate response
-            response = self.chain.invoke({"question": question})
-            answer = response["answer"]
+            if context:
+                # Generate response
+                response = self.chain.invoke({"question": question})
+                answer = response["answer"]
 
-            # Add debug information
-            debug_info = {
-                "retrieved_context": context,
-                "raw_results": [
-                    {
-                        "content": doc[0].page_content,
-                        "score": doc[1],
-                        "metadata": doc[0].metadata
-                    }
-                    for doc in raw_results
-                ]
-            }
+                # Add debug information
+                debug_info = {
+                    "retrieved_context": context,
+                    "raw_results": [
+                        {
+                            "content": doc[0].page_content,
+                            "score": doc[1],
+                            "metadata": doc[0].metadata
+                        }
+                        for doc in raw_results
+                    ]
+                }
 
-            # Ensure the response has "answer" as a string
-            return {
-                "answer": str(answer),
-                "debug": debug_info
-            }
+                return {
+                    "answer": str(answer),
+                    "title": raw_results[:1][0][0].metadata['title'],
+                    "content": raw_results[:1][0][0].page_content
+                }
+            
+            else:
+                return {"answer": "I couldn't find anything relevant in your notes."}
 
         except Exception as e:
             raise RAGBotError(f"Error processing query: {e}")
