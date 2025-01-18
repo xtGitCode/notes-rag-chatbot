@@ -51,3 +51,12 @@ jobs:
       - name: Push Docker image for Frontend to AWS ECR
         run: |
           docker push ${{ secrets.ECR_REPOSITORY_FRONTEND }}:latest
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          pip install awsebcli
+          eb init -p docker ${{ secrets.EB_APPLICATION_NAME }} \
+            --platform "Multi-container Docker" \
+            --region ${{ secrets.AWS_REGION }}
+          eb use ${{ secrets.EB_ENVIRONMENT_NAME }}
+          eb deploy --timeout 20
