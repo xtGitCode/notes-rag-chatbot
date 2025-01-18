@@ -77,9 +77,9 @@ if notes:
             st.write(note["content"])
             if st.button(f"Delete {note['title']}", key=f"delete_{note['id']}"):
                 if delete_note(note["id"]):
-                    st.success(f"Note '{note['title']}' deleted.")
                     with st.spinner('Deleting note, please wait...'):
                         time.sleep(5) 
+                        st.success(f"Note '{note['title']}' deleted.")
                     st.rerun() 
 
 else:
@@ -101,11 +101,11 @@ if st.button("Save Note"):
     if new_title and new_content:
         new_note = create_note(new_title, new_content)
         if new_note:
-            st.success(f"Note '{new_title}' created!")
             st.session_state.new_title = ""
             st.session_state.new_content = ""
             with st.spinner('Creating note, please wait...'):
                         time.sleep(5) 
+                        st.success(f"Note '{new_title}' created!")
             st.rerun()
         else:
             st.error("Failed to create note.")
