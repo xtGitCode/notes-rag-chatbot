@@ -1,8 +1,6 @@
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from backend.app.routers import notes, chat
 from dotenv import load_dotenv
-import uuid
 
 load_dotenv()
 app = FastAPI(title="Notes RAG Chatbot API")

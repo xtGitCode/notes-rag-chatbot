@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Dict, Any
+from typing import List
 from transformers import AutoTokenizer
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
@@ -31,9 +31,9 @@ class NotesRAGBot:
         if not self.hf_token:
             raise RAGBotError("HF_TOKEN environment variable not set")
         
-        self.model_name = "google/flan-t5-base" 
+        self.model_name = "google/flan-t5-base" # free model
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.max_tokens = 512  # Adjusted for the smaller model
+        self.max_tokens = 512 
 
     def _initialize_components(self) -> None:
         """Initialize embeddings, LLM, database, and other components."""
@@ -43,7 +43,7 @@ class NotesRAGBot:
                 model_name="sentence-transformers/all-mpnet-base-v2"
             )
 
-            # Initialize LLM with adjusted parameters for the free model
+            # Initialize LLM
             self.llm = HuggingFaceHub(
                 repo_id=self.model_name,
                 huggingfacehub_api_token=self.hf_token,
@@ -55,9 +55,10 @@ class NotesRAGBot:
                 }
             )
 
+            # Initialize pinecone db
             self.vectordb = PineconeStore(index, self.embeddings, text_key="content", namespace=namespace)
 
-            # Rest of the initialization code remains the same
+            # Initialize memory
             self.memory = ConversationBufferMemory(
                 memory_key="chat_history",
                 return_messages=True,
@@ -100,16 +101,18 @@ class NotesRAGBot:
         try:
             results = query_pinecone(question, k)
 
-             # Filter results based on score threshold (adjust threshold as needed)
-            score_threshold = 0.5  # Assuming lower scores are better
+            # Filter results
+            score_threshold = 0.5  # based on trial and error
             filtered_docs = [
                 result  
                 for result in results
                 if isinstance(result, dict) and result.get('score', float('inf')) >= score_threshold
             ]
 
+            # Did noot pass filter
             if not filtered_docs:
                 return None
+            # Pass filter
             else:
                 documents = [
                     Document(page_content=doc.get('content', ''), metadata=doc)
@@ -133,7 +136,7 @@ class NotesRAGBot:
         try:
             # Initialize chain if not already done
             if not self.chain:
-                # Get the prompt template
+                # Get prompt template from pprompt_templates.py
                 rag_prompt = get_rag_prompt()
 
                 self.chain = ConversationalRetrievalChain.from_llm(
@@ -149,14 +152,13 @@ class NotesRAGBot:
             # Manage conversation memory
             self._manage_memory()
 
-            # Get relevant context and debug info
+            # Get relevant context to check if query pass the filter
             context = self._get_relevant_context(question)
-            if context:
-                combined_context = context[0].metadata.get('title', '') + "\n" + context[0].metadata.get('content', '')
-                
+            if context:   
+                # if yes, invoke llm using self.chain             
                 response = self.chain({"question": question})
                 
-                # Safely access source_documents
+                # access source_documents to extract response
                 source_documents = response.get('source_documents', [])
                 if source_documents:
                     first_document = source_documents[0]
@@ -171,6 +173,7 @@ class NotesRAGBot:
                     "title": title,
                     "content": content
                 }
+            # if no, no need to invoke llm
             else:
                 return {"answer": "I couldn't find anything relevant in your notes.",
                         "title":"None",

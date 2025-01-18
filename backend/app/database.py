@@ -4,20 +4,17 @@ import uuid
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
-from langchain_pinecone import PineconeVectorStore
 
-# Load environment variables
 load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Pinecone Configuration ---
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = "notes-index"
 
-# Initialize Pinecone instance
+# Initialze pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 namespace = "notes-database"
 
@@ -30,7 +27,7 @@ print(index)
 
 logger.info(f"Pinecone index '{INDEX_NAME}' initialized.")
 
-# --- Embedding Model ---
+# Embedding model
 try:
     embedding_model = SentenceTransformer('all-mpnet-base-v2')
     logger.info("SentenceTransformer model loaded.")
@@ -38,6 +35,7 @@ except Exception as e:
     logger.error(f"Error loading SentenceTransformer model: {e}")
     raise
 
+# Database operations
 def add_note_to_pinecone(note_title: str, note_content: str, metadata: dict = None):
     """Adds a note to Pinecone."""
     try:
@@ -78,10 +76,9 @@ def query_pinecone(query_text: str, top_k=3):
             logger.error("Query text is empty or invalid.")
             return []
 
-        # Generate the embedding for the query
         query_embedding = embedding_model.encode(query_text).tolist()
 
-        # Query the Pinecone index
+        # query pinecone index
         results = index.query(
             namespace=namespace,
             vector=query_embedding,
@@ -91,7 +88,6 @@ def query_pinecone(query_text: str, top_k=3):
         )
 
         if results.get("matches"):
-            # Extract relevant context
             result_context = [
                 {
                     "title": match["metadata"].get("title", "No Title"),

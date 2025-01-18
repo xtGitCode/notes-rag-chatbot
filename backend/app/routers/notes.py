@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.app.models import NoteCreate, Note
 from backend.app.database import add_note_to_pinecone, delete_note_from_pinecone, index, namespace
-import pinecone
 from typing import List
 from fastapi import APIRouter, HTTPException
 import logging

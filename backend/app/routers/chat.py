@@ -18,7 +18,7 @@ async def chat_endpoint(chat_request: ChatRequest):
     try:
         logger.info(f"Received chat request: {chat_request.question}")
 
-        # Query the bot with just the question
+        # Query bot
         response = bot.query(question=chat_request.question)
 
         # Process the response
