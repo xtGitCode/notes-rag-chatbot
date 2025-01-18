@@ -52,8 +52,12 @@ jobs:
         run: |
           docker push ${{ secrets.ECR_REPOSITORY_FRONTEND }}:latest
 
-      - name: Deploy to Elastic Beanstalk
+      - name: Initialize EB CLI (if not initialized already)
         run: |
           pip install awsebcli
+          eb init -p docker --region ${{ secrets.AWS_REGION }} --no-verify-ssl
           eb use NotesChat-env
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
           eb deploy
