@@ -55,7 +55,7 @@ jobs:
       - name: Initialize EB CLI
         run: |
           pip install awsebcli
-          eb init "NotesChat" -p "ECS running on 64bit Amazon Linux 2/3.3.10" --region ${{ secrets.AWS_REGION }}
+          eb init "NotesChat" -p "64bit Amazon Linux 2/3.3.10" --region ${{ secrets.AWS_REGION }}
           eb use NotesChat-env
 
       - name: Deploy to Elastic Beanstalk
