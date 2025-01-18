@@ -55,7 +55,7 @@ jobs:
       - name: Initialize EB CLI (if not initialized already)
         run: |
           pip install awsebcli
-          eb init -p docker --region ${{ secrets.AWS_REGION }} --no-verify-ssl --application-name Notes Chat
+          eb init -p docker --region ${{ secrets.AWS_REGION }} --no-verify-ssl --application-name "Notes Chat"
           eb use NotesChat-env
 
       - name: Deploy to Elastic Beanstalk
