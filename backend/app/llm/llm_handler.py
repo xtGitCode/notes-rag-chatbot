@@ -7,11 +7,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import HuggingFaceHub
 from backend.app.database import index, query_pinecone, namespace
 from .prompt_templates import get_rag_prompt
-from dotenv import load_dotenv
 from langchain.docstore.document import Document
 from langchain.vectorstores import Pinecone as PineconeStore
-
-load_dotenv()
 
 class RAGBotError(Exception):
     """Custom exception for RAGBot specific errors."""
@@ -27,7 +24,7 @@ class NotesRAGBot:
 
     def _setup_environment(self) -> None:
         """Set up environment variables and configurations."""
-        self.hf_token = os.environ.get("HF_TOKEN")
+        self.hf_token = os.getenv("HF_TOKEN")
         if not self.hf_token:
             raise RAGBotError("HF_TOKEN environment variable not set")
         

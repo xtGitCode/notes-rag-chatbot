@@ -1,11 +1,8 @@
 import os
 import logging
 import uuid
-from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
-
-load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

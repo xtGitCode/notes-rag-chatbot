@@ -1,8 +1,6 @@
 from fastapi import FastAPI
 from backend.app.routers import notes, chat
-from dotenv import load_dotenv
 
-load_dotenv()
 app = FastAPI(title="Notes RAG Chatbot API")
 
 app.include_router(notes.router, prefix="/notes", tags=["Notes"])
